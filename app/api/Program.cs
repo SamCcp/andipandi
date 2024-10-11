@@ -1,3 +1,11 @@
+using api.Controllers;
+using core;
+using core.Features.Usuarios;
+using dataaccess.ApplicationDbContext;
+using MediatR;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -5,40 +13,50 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+var cadenaConexion = builder.Configuration.GetConnectionString("sql");
+var optionsBuilder = new DbContextOptionsBuilder<SqlDbContext>().UseSqlServer(cadenaConexion).EnableDetailedErrors();
+var dbContext = new SqlDbContext(optionsBuilder.Options);
+
+builder.Services.AddMediatR(config =>
+{
+  config.RegisterServicesFromAssembly(typeof(CorePointer).Assembly);
+});
+
+
+builder.Services.AddSingleton<SqlDbContext>(new SqlDbContext(optionsBuilder.Options));
+
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-  app.UseSwagger();
-  app.UseSwaggerUI();
-}
+app.UseSwagger();
+app.UseSwaggerUI();
 
 app.UseHttpsRedirection();
 
-var summaries = new[]
-{
-  "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
+app.ApiControllerMapper();
 
-app.MapGet("/weatherforecast", () =>
-  {
-    var forecast = Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-          DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-          Random.Shared.Next(-20, 55),
-          summaries[Random.Shared.Next(summaries.Length)]
-        ))
-      .ToArray();
-    return forecast;
-  })
-  .WithName("GetWeatherForecast")
-  .WithOpenApi();
+app.MapGet("/listausuarios", async () =>
+{
+  var request = new ListaUsuariosRequest();
+  var handler = new ListaUsuariosHandler(dbContext);
+  var response = await handler.Handle(request, CancellationToken.None);
+  return response;
+});
+
+app.MapGet("/listausuarios2", async ([FromServices]ISender sender, CancellationToken cancellationToken) =>
+{
+  var request = new ListaUsuariosRequest();
+  var data = await sender.Send(request, cancellationToken);
+  return data.Usuarios;
+});
+
+app.MapPost("/crearusuario", async (
+  [FromServices] ISender sender,
+  CrearUsuarioRequest request,
+  CancellationToken cancellationToken
+) =>
+{
+  var resultado = await sender.Send(request, cancellationToken);
+  return resultado;
+});
 
 app.Run();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-  public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
